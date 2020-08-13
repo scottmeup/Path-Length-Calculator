@@ -1,7 +1,6 @@
 """
 
-@author: andrewscott, with some code from http://online.rice.edu/courses/principles-of-computing-2/
-
+@author: andrewscott
 """
 
 import random
@@ -9,14 +8,13 @@ import poc_grid
 import poc_queue
 import poc_zombie_gui
 import time
+import copy
+import math
+from multiprocessing import Queue
 
 try:
     import codeskulptor
-    #codeskulptor.set_timeout(20)
 except ImportError as exp:
-#except Error as exp:
-    #print "Codeskulptor not found"
-    #print exp
     pass
 
 # debug vars
@@ -34,6 +32,10 @@ DEBUG_Z = False
 DEBUG_WEIGHT = False
 DEBUG_SF = False
 DEBUG_SW = False
+DEBUG_GHN = False
+DEBUG_GCN = False
+DEBUG_GRCL = False
+DEBUG_CLR = True
 
 # global constants
 EMPTY = 0
@@ -44,60 +46,130 @@ OBSTACLE = 5
 HUMAN = 6
 ZOMBIE = 7
 
-class Apocalypse(poc_grid.Grid):
+class path_calculator(poc_grid.Grid):
     """
     Class for simulating zombie pursuit of human on grid with
     obstacles
     """
 
     def __init__(self, grid_height, grid_width, obstacle_list = None,
-                 zombie_list = None, human_list = None):
+                 zombie_list = None, human_list = None, initial_weight_list = None, default_weight = None,
+                 demo_weight_list = None, hall_list = None):
         """
         Create a simulation of given size with given obstacles,
         humans, and zombies
         """
         poc_grid.Grid.__init__(self, grid_height, grid_width)
+        
         if obstacle_list != None:
             for cell in obstacle_list:
                 self.set_full(cell[0], cell[1])
+        
         if zombie_list != None:
-            self._zombie_list = list(zombie_list)
+            self._a_side_list = list(zombie_list)
         else:
-            self._zombie_list = []
+            self._a_side_list = []
+        
         if human_list != None:
             self._human_list = list(human_list)
         else:
             self._human_list = []
 
+        if hall_list != None:
+            self._hall_list = copy.deepcopy(hall_list)
+        else:
+            self.hall_list = {1: (grid_height, grid_width)}
+        
+        if default_weight != None:
+            self._default_weight = default_weight
+        else:
+            self._default_weight = 1
+
+        if demo_weight_list != None:
+            self._demo_weight_list = copy.deepcopy(demo_weight_list)
+        else:
+            #self._grid_width
+            self._demo_weight_list = self.generate_demo_weight_lists()
+
+            
+        #remove line below
+        if initial_weight_list != None:
+            self._initial_weight_list = initial_weight_list[:][:]
+        else:
+            self._initial_weight_list = [[self._default_weight for x in range(grid_width)] for y in range(grid_height)]
+            
+            
+
         self._z_side_list = []
         self._z_side_hall_list = {}
         self._z_side_coord_list = {}
         self._forbidden_list = {}
-        self._distance_field = None
-        
+        self._max_traversable_weight = self._default_weight
+        self._min_traversable_weight = self._default_weight
         
         #these should contain the dictionary items of cabinet lists, not their individual key / value pairs
         self._all_hall_cabinet_list = []
         self._all_hall_reverse_cabinet_list = []
+
+        #keep track of which demo map has just been served up
+        self._current_demo_weight_list = 0
+
+        #instantiate boundary list queue
+        self._boundary_list = poc_queue.Queue()
+
+    def generate_demo_weight_lists(self):
+        """
+        Generate & store a series of gradiated weight lists
+        :return: A list of 2d grid lists
+        """
+        demo_weight_list = []
+
+        #horizontal
+        demo_weight_list.append([[col for col in range(self.get_grid_width())] for row in range(self.get_grid_height())])
+        demo_weight_list.append([[(col+2)*-1 for col in range(self.get_grid_width())] for row in range(self.get_grid_height())])
+
+        #Vertical
+        demo_weight_list.append([[row for col in range(self.get_grid_width())] for row in range(self.get_grid_height())])
+        demo_weight_list.append([[(row+2)*-1 for col in range(self.get_grid_width())] for row in range(self.get_grid_height())])
+
+        #Diagonal NW/SE
+        demo_weight_list.append([[col+row for col in range(self.get_grid_width())] for row in range(self.get_grid_height())])
+        demo_weight_list.append([[(col+row)*-1 for col in range(self.get_grid_width())] for row in range(self.get_grid_height())])
+
+        #Diagonal NE/SW
+        demo_weight_list.append([[self.get_grid_width()-col+row for col in range(self.get_grid_width())] for row in range(self.get_grid_height())])
+        demo_weight_list.append([[(self.get_grid_width()-col+row)*-1 for col in range(self.get_grid_width())] for row in range(self.get_grid_height())])
+
+        #Circular
+        demo_weight_list.append([[math.sqrt((col-(self.get_grid_width()//2))**2 + (row-(self.get_grid_height()//2))**2)  for col in range(self.get_grid_width())] for row in range(self.get_grid_height())])
+        demo_weight_list.append([[(math.sqrt((col-(self.get_grid_width()//2))**2 + (row-(self.get_grid_height()//2))**2)+2)*-1  for col in range(self.get_grid_width())] for row in range(self.get_grid_height())])
+
+        return demo_weight_list
 
     def clear(self):
         """
         Set cells in obstacle grid to be empty
         Reset zombie and human lists to be empty
         """
+        if DEBUG_CLR:
+            print "clear(self)"
         poc_grid.Grid.clear(self)
-        self._zombie_list = []
+        self._a_side_list = []
         self._human_list = []
+
+    def set_floorplan(self, floorplan):
+        for cell in floorplan:
+            self.set_full(cell[0], cell[1])
 
     def set_aside(self, row, col):
         """
         Set A-Side to the given coordinate (zombie list)
         """
         #self._cells[row][col] = ZOMBIE
-        self._zombie_list =[(row, col)]
+        self._a_side_list =[(row, col)]
         if DEBUG_SA:
             print "\nset_aside()"
-            a_side = self._zombie_list[0]
+            a_side = self._a_side_list[0]
             print a_side
             self.get_cabinet_number(a_side)
 
@@ -113,17 +185,21 @@ class Apocalypse(poc_grid.Grid):
         #try to set the forbidden coordinates for this z-side with the cabinet NAME (string)
         #for the given z-side coordinate
         try:
-            self.set_forbidden(self.get_cabinet_number(self._human_list[0])) 
-        except:
-            print "error setting z-side"
+            cabinet_number = self.get_cabinet_number(self._human_list[0])
+            self.set_forbidden(cabinet_number)
+        except Exception as e:
+            print "bork bork, you're doing me a frighten"
+            print "cabinet_number", cabinet_number
+            print "Exception", e
+            print "self._human_list[0]", self._human_list[0]
         
         if DEBUG_SZ:
             print "\nset_zside()"
             z_side = self._human_list[0]
             print z_side
             self.get_cabinet_number(z_side)
-        if len(self._zombie_list) > 1:
-            self._zombie_list = self._zombie_list[:1]
+        if len(self._a_side_list) > 1:
+            self._a_side_list = self._a_side_list[:1]
         
         #break out to set forbidden function - avoid tiles defined in the forbidden dictionary
         #self.set_forbidden(self._human_list[0])
@@ -177,7 +253,12 @@ class Apocalypse(poc_grid.Grid):
         Key: Coordinate, Value: Cabinet ID
         """
         hall_id = self.get_hall_number(coordinate)
-        hall_reverse_cabinets = self._all_hall_reverse_cabinet_list[hall_id]
+        try:
+            hall_reverse_cabinets = self._all_hall_reverse_cabinet_list[hall_id]
+        except IndexError:
+            if DEBUG_GRCL:
+                print IndexError, "Hall not defined for this coordinate"
+            hall_reverse_cabinets = 0
         return hall_reverse_cabinets
 
     def get_all_reverse_cabinet_lists(self):
@@ -192,7 +273,14 @@ class Apocalypse(poc_grid.Grid):
         """
         Return number of zombies
         """
-        return len(self._zombie_list)
+        #todo: refactor code according to this name
+        return len(self._a_side_list)
+        
+    def num_grid_a_sides(self):
+        return len(self._a_side_list)
+        
+    def num_grid_z_sides(self):
+        return len(self._human_list)
 
     def zombies(self):
         """
@@ -201,15 +289,15 @@ class Apocalypse(poc_grid.Grid):
         """
         # replace with an actual generator
         index = 0
-        len_zombie_list = len(self._zombie_list)
+        len_zombie_list = len(self._a_side_list)
         #while index < len_zombie_list:
-        while index < len(self._zombie_list):
+        while index < len(self._a_side_list):
             try:
                 if DEBUG_Z:
-                    print len(self._zombie_list)
-                    print self._zombie_list
+                    print len(self._a_side_list)
+                    print self._a_side_list
                     print index
-                yield self._zombie_list[index]
+                yield self._a_side_list[index]
                 index += 1
             except IndexError as e:
                 print e
@@ -254,13 +342,14 @@ class Apocalypse(poc_grid.Grid):
 
         Actually sets some variables internally as well as returning the distance field
         """
+
         grid_width = poc_grid.Grid.get_grid_width(self)
         grid_height = poc_grid.Grid.get_grid_height(self)
         self._visited = poc_grid.Grid(grid_height, grid_width)
         self._distance_field = [[grid_width*grid_height for dummy_col in range(0, grid_width)] for dummy_row in range(0, grid_height)]
         self._boundary_list = poc_queue.Queue()
         if entity_type == ZOMBIE:
-            for entity in self._zombie_list:
+            for entity in self._a_side_list:
                 self._boundary_list.enqueue(entity)
         elif entity_type == HUMAN:
             for entity in self._human_list:
@@ -276,21 +365,25 @@ class Apocalypse(poc_grid.Grid):
 
         #each step outward of unoccupied space gets +1 distance to their
         #corresponding field position
+        if DEBUG_CDF:
+            current_boundary_size = len(self._boundary_list)
         while len(self._boundary_list)>0:
-            #if DEBUG_CDF:
-            #    print "len(self._boundary_list)", len(self._boundary_list)
+
+            if DEBUG_CDF:
+                next_boundary_size = len(self._boundary_list)
+                if next_boundary_size > current_boundary_size*1.1 or next_boundary_size < current_boundary_size/1.1:
+                    current_boundary_size = next_boundary_size
+                    print "len(self._boundary_list)", len(self._boundary_list)
             boundary = self._boundary_list.dequeue()
             if boundary == None:
                 return self._distance_field
             self._visited.set_full(boundary[0], boundary[1])
-            #self._distance_field[boundary[0], boundary[1]] = distance
             neighbors = self.four_neighbors(boundary[0], boundary[1])
             for neighbor in neighbors:
                 #check if already iterated over tile this calculation, if not add distance calculation
-                #if self._visited.is_empty(neighbor[0], neighbor[1]) and self.is_empty(neighbor[0], neighbor[1]):
-                #modified version, checks if neighbor distance > current cell distance and also adds it to the calculation
-                if self._visited.is_empty(neighbor[0], neighbor[1]) and self.is_empty(neighbor[0], neighbor[1]) \
-                        or self._distance_field[neighbor[0]][neighbor[1]] > self._distance_field[boundary[0]][boundary[1]] and self.is_empty(neighbor[0], neighbor[1]):
+                #Also checks if neighbor distance > current cell distance and also adds it to the calculation
+                if (self._visited.is_empty(neighbor[0], neighbor[1]) and self.is_empty(neighbor[0], neighbor[1])) \
+                or (self._distance_field[neighbor[0]][neighbor[1]] > self._distance_field[boundary[0]][boundary[1]] and self.is_empty(neighbor[0], neighbor[1])):
                     self._distance_field[neighbor[0]][neighbor[1]] =  self._distance_field[boundary[0]][boundary[1]] + self.get_weight(boundary[0], boundary[1])
                     self._boundary_list.enqueue(neighbor)
                     self._visited.set_full(neighbor[0], neighbor[1])
@@ -323,17 +416,6 @@ class Apocalypse(poc_grid.Grid):
         #setup initial results for comparison and storing of best move / distance
         best_distance = float("-inf")
         best_moves = []
-
-        #Why is this here again?!
-        """
-        try:
-            best_moves = list(moves_list[-1])
-        except TypeError as exp:
-            print "best_move() exception"
-            print type(moves_list)
-            print moves_list
-            print exp
-        """
 
         #Zombies want to move closer, humans further
         if entity_type == ZOMBIE:
@@ -398,7 +480,7 @@ class Apocalypse(poc_grid.Grid):
             #return [move for move in moves if self.is_empty(move[0], move[1])]
             #generator style
             for move in moves:
-                if self.is_empty(move[0], move[1]) and self.get_weight(move[0], move[1]) != float('inf') and move not in self._zombie_list:
+                if self.is_empty(move[0], move[1]) and self.get_weight(move[0], move[1]) != float('inf') and move not in self._a_side_list:
                     if DEBUG_VM:
                         print "VM - yielding move", move
                     yield move
@@ -420,7 +502,7 @@ class Apocalypse(poc_grid.Grid):
             entity_list = self._human_list
             neighbor_function = self.eight_neighbors
         elif entity_type == ZOMBIE:
-            entity_list = self._zombie_list
+            entity_list = self._a_side_list
             neighbor_function = self.four_neighbors
         for entity in entity_list:
             if DEBUG_ME:
@@ -442,8 +524,8 @@ class Apocalypse(poc_grid.Grid):
 
         #use some common sense and error checking, set the current end to the last position
         #in zombie list array
-        if len(self._zombie_list) > 0:
-            current_trace_end = self._zombie_list[-1]
+        if len(self._a_side_list) > 0:
+            current_trace_end = self._a_side_list[-1]
         if current_trace_end == (-1, -1):
             print "Z-Side not set, breaking"
             return
@@ -462,34 +544,45 @@ class Apocalypse(poc_grid.Grid):
             if next_trace_move == False:
                 print "Encountered Dead End or Forbidden Path"
                 return next_trace_move
-            self._zombie_list.append(next_trace_move)
+            self._a_side_list.append(next_trace_move)
             time.sleep(0.06)
 
             #update end of list
-            current_trace_end = self._zombie_list[-1]
+            current_trace_end = self._a_side_list[-1]
             return True
+
+    def detrace_z(self):
+        if len(self._a_side_list) > 1:
+            self._a_side_list.pop(1)
+            return True
+        else:
+            return False
 
     def get_a_side(self):
         """
         Returns the coordinate of the current a-side
         A should be Zombies        
         """
-        return self._zombie_list[0]
-        #return self._human_list[0]
+        try:
+            return self._a_side_list[0]
+        except IndexError:
+            return (0, 0)
 
     def get_z_side(self):
         """
         Returns the coordinate of the current a-side
         Z should be Humans        
         """
-        return self._human_list[0]
-        #return self._zombie_list[0]
+        try:
+            return self._human_list[0]
+        except IndexError:
+            return (0, 0)
 
     def get_trace_end(self):
         """
         Returns the current end of a trace between a-z
         """
-        return self._zombie_list[-1]
+        return self._a_side_list[-1]
 
     def get_weight(self, row, col):
         """
@@ -502,27 +595,131 @@ class Apocalypse(poc_grid.Grid):
             return float("inf")
 
     def set_weight(self, row, col, weight):
+        """
+        Sets the weight (cost of traversal) for a given coordinate
+        :param row: y coord, top = 0
+        :param col: x coord, left = 0
+        :param weight: cost of traversal
+        :return: None
+        """
         if self.is_empty(row, col):
             self._cells[row][col] = weight
+            #adjust the known stored min / max weight values
+            if weight != float('inf'):
+                if weight > self._max_traversable_weight:
+                    self._max_traversable_weight = weight
+                if weight < self._min_traversable_weight:
+                    self._min_traversable_weight = weight
             if DEBUG_SW:
                 print "(", row, ",", col, ") =", weight
         else:
             print "Trying to set weight of a non-traversable location"
             assert False
+            
+    def get_weight_map(self):
+        """
+        Returns the weight map for this simulation
+        :return: 2 dimensional list of weights mapped to grid coordinates
+        """
+        weight_map = [[self.get_weight(row, col) for col in range(self.get_grid_width())] for row in range(self.get_grid_height())]
+        return weight_map
+        
+    def set_weight_map(self, weight_map):
+        """
+        Takes a weight map and sets the grid values accordingly
+        :param weight_map: 2 dimensional list of weights mapped to grid coordinates
+        :return:
+        """
+        self.reset_max_traversable_weight()
+        self.reset_min_traversable_weight()
+        try:
+            for row in range(len(weight_map)):
+                for col in range(len(weight_map[0])):
+                    if self.is_empty(row, col):
+                        self.set_weight(row, col, weight_map[row][col])
+        except Exception as e:
+            print "bad weight map"
+            print e
+            
+    def store_current_weight_map(self):
+        self._initial_weight_list = self.get_weight_map()
+        
+    def load_stored_weight_map(self):
+        """
+        Map the stored weight grid "_initial_weight_list" onto the current 
+        display grid.
+        """
+        self.reset_max_traversable_weight()
+        self.reset_min_traversable_weight()
+        for row in range(self.get_grid_height()):
+            for col in range(self.get_grid_width()):
+                if self.is_empty(row, col):
+                    self.set_weight(row, col, self._initial_weight_list[row][col])
+
+    def load_stored_tile_weight(self, row, col):
+        self.set_weight(row, col, self._initial_weight_list[row][col])
+
+    def load_demo_tile_weight(self, row, col):
+        self.set_weight(row, col, self._demo_weight_list[row][col])
+
+    def get_random_demo_weight_list(self):
+        self._current_demo_weight_list = random.randrange(len(self._demo_weight_list))
+        #use even indexes only
+        if self._current_demo_weight_list %2 == 1:
+            self._current_demo_weight_list -= 1
+        return self._demo_weight_list[self._current_demo_weight_list]
+    
+    def get_demo_weight_list(self, index):
+        return self._demo_weight_list[index]
+        
+    def get_next_demo_weight_list(self):
+        self._current_demo_weight_list += 3
+        self._current_demo_weight_list %= len(self._demo_weight_list)
+        return self._demo_weight_list[self._current_demo_weight_list]
+
+    def get_number_of_weight_lists(self):
+        return len(self._demo_weight_list)
+
+    def get_default_weight(self):
+        return self._default_weight
+        
+    def get_max_traversable_weight(self):
+        return self._max_traversable_weight
+        
+    def get_min_traversable_weight(self):
+        return self._min_traversable_weight
+        
+    def reset_max_traversable_weight(self):
+        self._max_traversable_weight = self._default_weight
+        
+    def reset_min_traversable_weight(self):
+        self._min_traversable_weight = self._default_weight
+        
+    def get_relative_traversable_weight(self, weight):
+        relative_range = self.get_max_traversable_weight() - self.get_min_traversable_weight()
+        if relative_range < 1:
+            return 0.001
+        else:
+            result = float(weight) / float(relative_range)
+            return result
+
+    def set_default_weight(self, weight):
+        self._default_weight = weight
 
     def set_forbidden(self, z_side):
         """
         Takes a string name of the z-side cabinet
-        Checks againsta dictionary of pre-defined locations as forbidden to traverse for that z-side
+        Checks against a dictionary of pre-defined locations as forbidden to traverse for that z-side
         Sets the forbidden tiles' weight to inf
         """
         if DEBUG_SF:
             print "sf z_side:", z_side
-        #First, reset all weights to default of 1
-        for row in range(self.get_grid_height()):
-            for col in range(self.get_grid_width()):
+            
+        #First, reset all weights to initial values
+        for col in range(self.get_grid_width()):
+            for row in range(self.get_grid_height()):
                 if self.is_empty(row, col):
-                    self.set_weight(row, col, 1)
+                    self.set_weight(row, col, (self._initial_weight_list[row][col]))
                     
         #look up list of forbidden tiles for this z-side
         try:
@@ -535,7 +732,8 @@ class Apocalypse(poc_grid.Grid):
         for tile in forbidden_tiles:
             if DEBUG_SF:
                 print "Current tile", tile
-            self.set_weight(tile[0], tile[1], float("inf"))
+            if self.is_empty(tile[0], tile[1]):
+                self.set_weight(tile[0], tile[1], float("inf"))
 
         if DEBUG_SF:
             print "forbidden_tiles", forbidden_tiles
@@ -550,7 +748,6 @@ class Apocalypse(poc_grid.Grid):
                 print this_row
         
     def invert_dictionary(self, dictionary):
-        #inverted = dict([v, k] for k, tuple(v) in dictionary.iteritems())
         inverted = {v: k for k, v in dictionary.items()}        
         return inverted
         
@@ -562,18 +759,53 @@ class Apocalypse(poc_grid.Grid):
         hall1_offset = (1, 1)
         hall1_dim = (28, 73)
         
-        hall_list = ((hall1_offset, hall1_dim), )
-        
-        #Set the return variable 'hall' to empty string in case coordinate is not fount
-        hall = ""
-        for dummy_x in range(len(hall_list)):
-            this_hall_offset = hall_list[dummy_x][0]
-            this_hall_dim = hall_list[dummy_x][1]
+        self._hall_list = ((hall1_offset, hall1_dim), )
+
+        if DEBUG_GHN:
+            print "len(self._hall_list)", len(self._hall_list)
+
+        #Set the return variable 'hall' to -1 in case coordinate is not found
+        hall = -1
+        for dummy_x in range(len(self._hall_list)):
+            this_hall_offset = self._hall_list[dummy_x][0]
+            this_hall_dim = self._hall_list[dummy_x][1]
             if coordinate[0] >= this_hall_offset[0] and coordinate[0] <= this_hall_offset[0]+this_hall_dim[0] and \
             coordinate[1] >= this_hall_offset[1] and coordinate[0] <= this_hall_offset[1]+this_hall_dim[1]:
                 hall=dummy_x
         return hall
-        
+
+
+    def set_hall_number(self, hall_number, hall_offset, hall_dimensions):
+        """
+
+        :param hall_number: Int - ID number of the hall
+        :param hall_offset: Tuple (int, int) - coordinate of starting position for the hall
+        :param hall_dimensions: Tuple (int, int) - height, width of the hall
+        :return: None
+        """
+        new_hall_start_row = hall_offset[0]
+        new_hall_start_col = hall_offset[1]
+        new_hall_height = hall_dimensions[0]
+        new_hall_width = hall_dimensions[1]
+        for hall in self._hall_list:
+            overlap = False
+            start_row = self._hall_list[hall][0][0]
+            start_col = self._hall_list[hall][0][1]
+            hall_height = self._hall_list[hall][1][0]
+            hall_width = self._hall_list[hall][1][1]
+
+            #check for vertical overlap
+            if (new_hall_start_row <= start_row+hall_height and new_hall_start_row >= start_row) or \
+            (new_hall_start_row+new_hall_height <= start_row+hall_height and new_hall_start_row+new_hall_height >= start_row):
+                #check for horizontal overlap
+                if (new_hall_start_col <= start_col+hall_width and new_hall_start_col >= start_col) or \
+                (new_hall_start_col+new_hall_width <= start_col+hall_width and new_hall_start_col+new_hall_width >= start_col):
+                    #overlap confirmed
+                    overlap = True
+
+            if not overlap:
+                self._hall_list[hall_number] = ((hall_offset), (hall_dimensions))
+
         
     def get_cabinet_number(self, coordinate):
         """
@@ -586,360 +818,50 @@ class Apocalypse(poc_grid.Grid):
             this_cabinet_list = self.get_reverse_cabinet_list(coordinate)   
             try:
                 cabinet = this_cabinet_list[coordinate]
-                #print "Cabinet", cabinet
                 return cabinet
             except KeyError as e:
-                #print "Cabinet not mapped at this coordinate"
-                pass
+                if DEBUG_GCN:
+                    print KeyError, "Cabinet not defined at this coordinate", coordinate
+            except TypeError as e:
+                if DEBUG_GCN:
+                    print TypeError
         return ""
 
+    def get_number_paths_calculated(self):
+        #number_of_paths = len(self._boundary_list)
+        return len(self._boundary_list)
 
-height = 33
-width = 75
-border = 1
-#paths_list = set()
-def difference_list(list1, list2):
-    temp_list = []
-    for item in list1:
-        if item not in list2:
-            temp_list.append(item)
-        else:
-            #print "excluding", item
-            pass
-    return temp_list
+    def difference_of_lists(self, list1, list2):
+        temp_list = []
+        for item in list1:
+            if item not in list2:
+                temp_list.append(item)
+            else:
+                pass
+        return temp_list
 
-def panel_to_index(y, x):
-    return (y-1, x-1)
+    def all_paths(self, clear_lines, excluded_tiles=None):
+        #global paths_list
+        paths = []
+        for line_point in clear_lines:
+            for coord in self.line(line_point[0], line_point[1]):
+                paths.append(coord)
+        return self.difference_of_lists(paths, excluded_tiles)
 
-def line(start_panel, end_panel):
-    start = panel_to_index(start_panel[0], start_panel[1])
-    end = panel_to_index(end_panel[0], end_panel[1])
-    #print "start", start
-    #print "end", end
-    line = []
-    increment = 1
-    if start[0] > end[0]:
-        increment = -1
-    elif start[1] > end[1]:
-        increment = -1
-    #print "increment", increment
-    if start[0] != end[0]:
-        #print "vertical"
-        line = [(y_pos, start[1]) for y_pos in range(start[0], end[0]+1, increment)]
-    elif start[1] != end[1]:
-        #print "horizontal"
-        line = [(start[0], x_pos) for x_pos in range(start[1], end[1]+1, increment)]
-    #print "line", line
+    def panel_to_index(self, y, x):
+        return (y-1, x-1)
 
-    return line
-
-def all_paths():
-    #global paths_list
-    paths = []
-    
-    #clear_cols and clear_rows depricated - doesn't work with changing grid size
-    #full width / heigth areas
-    #clear_rows = [2, 16, 29]
-    clear_rows = []    
-    #clear_cols = [2, 5, 8, 13, 16, 21, 24, 29, 32, 37, 40, 47, 50, 55, 58, 63, 66, 71, 74]
-    clear_cols = []
-    
-                  #full-hall horizontal paths
-    clear_lines = [((2, 2), (2, 74)),
-                  ((16, 2), (16, 74)),
-                  ((29, 2), (29, 74)),
-                  #full-hall vertical paths
-                  ((2, 2), (29, 2)),
-                  ((2, 5), (29, 5)),
-                  ((2, 8), (29, 8)),
-                  ((2, 13), (29, 13)),
-                  ((2, 16), (29, 16)),
-                  ((2, 21), (29, 21)),
-                  ((2, 24), (29, 24)),
-                  ((2, 29), (29, 29)),
-                  ((2, 32), (29, 32)),
-                  ((2, 37), (29, 37)),
-                  ((2, 40), (29, 40)),
-                  ((2, 47), (29, 47)),
-                  ((2, 50), (29, 50)),
-                  ((2, 55), (29, 55)),
-                  ((2, 58), (29, 58)),
-                  ((2, 63), (29, 63)),
-                  ((2, 66), (29, 66)),
-                  ((2, 71), (29, 71)),
-                  ((2, 74), (29, 74)),
-                  #additional paths 
-                  ((2, 69), (16, 69)),
-                  ((2, 70), (16, 70)),
-                  ((2, 73), (16, 73)),
-                  ((2, 74), (16, 74)),
-                  ((6, 69), (6, 74)),
-                  ((9, 69), (9, 74)),
-                  ((14, 69), (14, 74)),
-                  ((15, 69), (15, 74)),
-                  ((16, 69), (16, 74))]
-    #inner methods to return coordinates
-    def row_path(row):
-        return [(row-1, x_pos) for x_pos in range(border, width-border)]
-    def col_path(col):
-        return [(y_pos, col-1) for y_pos in range(border, height-border)]
-    for row in clear_rows:
-        for coord in row_path(row):
-            #print coord
-            paths.append(coord)
-    for col in clear_cols:
-        for coord in col_path(col):
-            paths.append(coord)
-    for line_point in clear_lines:
-        for coord in line(line_point[0], line_point[1]):
-            paths.append(coord)
-    #print paths
-    #for cell in paths_list:
-    #    yield cell
-    #remove some extra cells
-    #extra_paths = ((1, 74), (28, 74))
-    #extra_paths = [(1, 74), (15, 74), (28, 74)]
-    remove_paths = [panel_to_index(2, 75), panel_to_index(16, 75), panel_to_index(29, 75)]
-    return difference_list(paths, remove_paths)
-
-racetrack =  all_paths()
-no_path = []
-for grid_y in range(0, height):
-    for grid_x in range(0, width):
-        #no_path.add((grid_y, grid_x))
-        no_path.append((grid_y, grid_x))
-#print no_path
-
-floorplan = difference_list(no_path, racetrack)
-
-#instantiate the simulation
-#simulation = Apocalypse(height, width, list(floorplan), zlist, hlist)
-simulation = Apocalypse(height, width, list(floorplan))
-
-
-#define coord dictionaries
-simulation._z_side_list = ("001-A", "001-B", "002-A", "002-B")
-simulation._z_side_coord_list = {'001-A': (1, 1), '001-B': (1, 1), '002-A': (1, 1), '002-B': (1, 1)}
-simulation._z_side_hall_list = {'001-A': 0, '001-B': 0, '002-A': 0, '002-B': 0}
-hall_1_cabinet_list = {'001-A': (13, 70), '001-B': (12, 70), '002-B': (5, 70), '002-A': (4, 70)}
-
-#this forbidden list only blocks the entrance areas
-simulation._forbidden_list = {'001-A': ((1, 66), (1, 67), (28, 66), (28, 67)),
-                                '001-B': ((1, 66), (1, 67), (28, 66), (28, 67)),
-                                '002-A': ((15, 66), (15, 67)),
-                                '002-B': ((15, 66), (15, 67))}
-
-#create and add the midpoint to the forbidden list of cabinets that don't use
-#the midpoint as an access path: traces should run around the outside of the track                                
-midpoint = tuple(line((16, 2), (16, 68)))
-two_one_six_a = simulation._forbidden_list['002-A']
-two_one_six_b = simulation._forbidden_list['002-B']
-simulation._forbidden_list['002-A'] = midpoint + two_one_six_a
-simulation._forbidden_list['002-B'] = midpoint + two_one_six_b 
-
-#using coordinate for cabinet 801                                
-offset = (27, 46)
-row_800 = {'801': (offset[0]-0, offset[1]), 
-           '802': (offset[0]-1, offset[1]), 
-           '803': (offset[0]-2, offset[1]), 
-           '804': (offset[0]-3, offset[1]), 
-           '805': (offset[0]-4, offset[1]), 
-           '806': (offset[0]-5, offset[1]), 
-           '807': (offset[0]-6, offset[1]), 
-           '808': (offset[0]-7, offset[1]), 
-           '809': (offset[0]-8, offset[1]),
-           '810': (offset[0]-9, offset[1]), 
-           '811': (offset[0]-10, offset[1]), 
-           '812': (offset[0]-11, offset[1]), 
-           '813': (offset[0]-12, offset[1]), 
-           '814': (offset[0]-13, offset[1]), 
-           '815': (offset[0]-14, offset[1]), 
-           '816': (offset[0]-15, offset[1]), 
-           '817': (offset[0]-16, offset[1]), 
-           '818': (offset[0]-17, offset[1]), 
-           '819': (offset[0]-18, offset[1]), 
-           '820': (offset[0]-19, offset[1]), 
-           '821': (offset[0]-20, offset[1]), 
-           '822': (offset[0]-21, offset[1]), 
-           '823': (offset[0]-22, offset[1]), 
-           '824': (offset[0]-23, offset[1]), 
-           '825': (offset[0]-24, offset[1]), 
-           '826': (offset[0]-25, offset[1])}
-
-#using coordinate for cabinet 701   
-offset = (27, 49)          
-row_700 = {'701': (offset[0]-0, offset[1]), 
-           '702': (offset[0]-1, offset[1]), 
-           '703': (offset[0]-2, offset[1]), 
-           '704': (offset[0]-3, offset[1]), 
-           '705': (offset[0]-4, offset[1]), 
-           '706': (offset[0]-5, offset[1]), 
-           '707': (offset[0]-6, offset[1]), 
-           '708': (offset[0]-7, offset[1]), 
-           '709': (offset[0]-8, offset[1]),
-           '710': (offset[0]-9, offset[1]), 
-           '711': (offset[0]-10, offset[1]), 
-           '712': (offset[0]-11, offset[1]), 
-           '713': (offset[0]-12, offset[1]), 
-           '714': (offset[0]-13, offset[1]), 
-           '715': (offset[0]-14, offset[1]), 
-           '716': (offset[0]-15, offset[1]), 
-           '717': (offset[0]-16, offset[1]), 
-           '718': (offset[0]-17, offset[1]), 
-           '719': (offset[0]-18, offset[1]), 
-           '720': (offset[0]-19, offset[1]), 
-           '721': (offset[0]-20, offset[1]), 
-           '722': (offset[0]-21, offset[1]), 
-           '723': (offset[0]-22, offset[1]), 
-           '724': (offset[0]-23, offset[1]), 
-           '725': (offset[0]-24, offset[1]), 
-           '726': (offset[0]-25, offset[1])}
-           
-#using coordinate for cabinet 601   
-offset = (27, 54)          
-row_600 = {'601': (offset[0]-0, offset[1]), 
-           '602': (offset[0]-1, offset[1]), 
-           '603': (offset[0]-2, offset[1]), 
-           '604': (offset[0]-3, offset[1]), 
-           '605': (offset[0]-4, offset[1]), 
-           '606': (offset[0]-5, offset[1]), 
-           '607': (offset[0]-6, offset[1]), 
-           '608': (offset[0]-7, offset[1]), 
-           '609': (offset[0]-8, offset[1]),
-           '610': (offset[0]-9, offset[1]), 
-           '611': (offset[0]-10, offset[1]), 
-           '612': (offset[0]-11, offset[1]), 
-           '613': (offset[0]-12, offset[1]), 
-           '614': (offset[0]-13, offset[1]), 
-           '615': (offset[0]-14, offset[1]), 
-           '616': (offset[0]-15, offset[1]), 
-           '617': (offset[0]-16, offset[1]), 
-           '618': (offset[0]-17, offset[1]), 
-           '619': (offset[0]-18, offset[1]), 
-           '620': (offset[0]-19, offset[1]), 
-           '621': (offset[0]-20, offset[1]), 
-           '622': (offset[0]-21, offset[1]), 
-           '623': (offset[0]-22, offset[1]), 
-           '624': (offset[0]-23, offset[1]), 
-           '625': (offset[0]-24, offset[1]), 
-           '626': (offset[0]-25, offset[1])}
-           
-#using coordinate for cabinet 501   
-offset = (27, 57)          
-row_500 = {'501': (offset[0]-0, offset[1]), 
-           '502': (offset[0]-1, offset[1]), 
-           '503': (offset[0]-2, offset[1]), 
-           '504': (offset[0]-3, offset[1]), 
-           '505': (offset[0]-4, offset[1]), 
-           '506': (offset[0]-5, offset[1]), 
-           '507': (offset[0]-6, offset[1]), 
-           '508': (offset[0]-7, offset[1]), 
-           '509': (offset[0]-8, offset[1]),
-           '510': (offset[0]-9, offset[1]), 
-           '511': (offset[0]-10, offset[1]), 
-           '512': (offset[0]-11, offset[1]), 
-           '513': (offset[0]-12, offset[1]), 
-           '514': (offset[0]-13, offset[1]), 
-           '515': (offset[0]-14, offset[1]), 
-           '516': (offset[0]-15, offset[1]), 
-           '517': (offset[0]-16, offset[1]), 
-           '518': (offset[0]-17, offset[1]), 
-           '519': (offset[0]-18, offset[1]), 
-           '520': (offset[0]-19, offset[1]), 
-           '521': (offset[0]-20, offset[1]), 
-           '522': (offset[0]-21, offset[1]), 
-           '523': (offset[0]-22, offset[1]), 
-           '524': (offset[0]-23, offset[1]), 
-           '525': (offset[0]-24, offset[1]), 
-           '526': (offset[0]-25, offset[1])}
-           
-#using coordinate for cabinet 401   
-offset = (27, 62)          
-row_400 = {'407': (offset[0]-6, offset[1]), 
-           '408': (offset[0]-7, offset[1]), 
-           '409': (offset[0]-8, offset[1]),
-           '410': (offset[0]-9, offset[1]), 
-           '411': (offset[0]-10, offset[1]), 
-           '412': (offset[0]-11, offset[1]), 
-           '413': (offset[0]-12, offset[1]), 
-           '414': (offset[0]-13, offset[1]), 
-           '415': (offset[0]-14, offset[1]), 
-           '416': (offset[0]-15, offset[1]), 
-           '417': (offset[0]-16, offset[1]), 
-           '418': (offset[0]-17, offset[1]), 
-           '419': (offset[0]-18, offset[1]), 
-           '420': (offset[0]-19, offset[1]), 
-           '421': (offset[0]-20, offset[1]), 
-           '422': (offset[0]-21, offset[1]), 
-           '423': (offset[0]-22, offset[1]), 
-           '424': (offset[0]-23, offset[1]), 
-           '425': (offset[0]-24, offset[1]), 
-           '426': (offset[0]-25, offset[1])}
-          
-#using coordinate for cabinet 301   
-offset = (27, 65)          
-row_300 = {'307': (offset[0]-6, offset[1]), 
-           '308': (offset[0]-7, offset[1]), 
-           '309': (offset[0]-8, offset[1]),
-           '310': (offset[0]-9, offset[1]), 
-           '311': (offset[0]-10, offset[1]), 
-           '312': (offset[0]-11, offset[1]), 
-           '313': (offset[0]-12, offset[1]), 
-           '314': (offset[0]-13, offset[1]), 
-           '315': (offset[0]-14, offset[1]), 
-           '316': (offset[0]-15, offset[1]), 
-           '317': (offset[0]-16, offset[1]), 
-           '318': (offset[0]-17, offset[1]), 
-           '319': (offset[0]-18, offset[1]), 
-           '320': (offset[0]-19, offset[1]), 
-           '321': (offset[0]-20, offset[1]), 
-           '322': (offset[0]-21, offset[1]), 
-           '323': (offset[0]-22, offset[1]), 
-           '324': (offset[0]-23, offset[1]), 
-           '325': (offset[0]-24, offset[1]), 
-           '326': (offset[0]-25, offset[1])}
-           
-#combine all lists of cabinet coordinates           
-hall_1_cabinet_list.update(row_300)
-hall_1_cabinet_list.update(row_400)
-hall_1_cabinet_list.update(row_500)
-hall_1_cabinet_list.update(row_600)
-hall_1_cabinet_list.update(row_700)
-hall_1_cabinet_list.update(row_800)
-
-#create the reverse-lookup cabinet list
-hall1_reverse_cabinet_list = simulation.invert_dictionary(hall_1_cabinet_list)
-
-#add the hall dictionaries to the 'all' lists
-simulation._all_hall_cabinet_list.append(hall_1_cabinet_list)
-simulation._all_hall_reverse_cabinet_list.append(hall1_reverse_cabinet_list)
-           
-#Starting points for a + z sides
-starting_a = [27, 54]
-starting_z = simulation._all_hall_cabinet_list[0][simulation._z_side_list[-1]]
-simulation.set_aside(starting_a[0], starting_a[1])
-simulation.set_zside(starting_z[0], starting_z[1])          
-
-poc_zombie_gui.run_gui(simulation)
-#try:
-#    poc_zombie_gui.run_gui(Apocalypse(30, 40))
-#except:
-#    print "gui initialization failed"
-#test = Apocalypse(30, 40)
-"""
-(27, 46) (2, 46) = 801 - 826
-(27, 49) (2, 49) = 701 - 726
-(27, 54) (2, 54) = 601 - 626
-(27, 57) (2, 57) = 501 - 526
-(14, 62) (2, 62) = 414 - 426
-(14, 65) (2, 65) = 314 - 326
-
-(27, 70) (16, 70) = 201 - 209 (9 cabinets / 12 tiles)
-(27, 73) (16, 73) = 101 - 109 (9 cabinets / 12 tiles)
-
-(14, 73) (3, 73) = 111 - 118 (8 cabinets / 12 tiles)
-(13, 70) = 001-B
-(12, 70) = 001-A
-(5, 70) = 002-B
-(4, 70) = 002-A
-"""
+    def line(self, start_panel, end_panel):
+        start = self.panel_to_index(start_panel[0], start_panel[1])
+        end = self.panel_to_index(end_panel[0], end_panel[1])
+        line = []
+        increment = 1
+        if start[0] > end[0]:
+            increment = -1
+        elif start[1] > end[1]:
+            increment = -1
+        if start[0] != end[0]:
+            line = [(y_pos, start[1]) for y_pos in range(start[0], end[0]+1, increment)]
+        elif start[1] != end[1]:
+            line = [(start[0], x_pos) for x_pos in range(start[1], end[1]+1, increment)]
+        return line

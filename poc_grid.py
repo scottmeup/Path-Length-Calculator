@@ -3,7 +3,7 @@ Grid class
 """
 
 EMPTY = 1
-FULL = -1
+FULL = 'F'
 
 class Grid:
     """

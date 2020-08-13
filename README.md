@@ -1,14 +1,12 @@
-RUN by loading FullpathCalculator.py
+Calculates the shortest path between two points along a grid of non-traversable and traversable tiles of variable cost.
+Launch any of the files prefixed 'run' for a demonstration.
 
-TODO:
--editor mode for cell weight, cabinet ID, etc.
+Usage
+*Mouse Click(Mode Selection):  - change the behaviour of mouse clicks on the grid area.
+Options are Place A-Side (start), Place Z-Side (end), Add Path, Delete Path
+*Calculate Length* - Calculate the distance of the shortest path between A-Side and Z-Side. Display distance only, do not trace.
+*Trace Path* - Performs the distance calculation between A-Side and Z-Side, then traces the path on the grid visually.
 
-DONE:
--Move "forbidden" setting from GUI to program layer
--figure out why best_move sometimes returns only one element of a tuple (int)
--add gui text inputs for setting a + z sides
--figure out what's going on with GUI toggle mouse type: it seems to be using / listing one mode in the cycle ahead of what the variable says it's set to
--Fixed bug in best move generator (would sometimes start list with int instead of tuple)
--Improved valid move generator: no longer returns coordinates already occupied by trace
-
-changed lists to tuples.
+Text Boxes
+When setting A or Z side, text boxes Will populate with predifined location information if it has been coded for the given cell.
+If text boxes are manually populated with existing location details, the A and Z side can be set with the *Input A+Z Sides* button.
