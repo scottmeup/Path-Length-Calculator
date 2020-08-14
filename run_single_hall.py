@@ -5,7 +5,7 @@ height = 30
 width = 75
 border = 1
 
-me10101 = FullpathCalculator.path_calculator(height, width)
+single_hall_01 = FullpathCalculator.path_calculator(height, width)
 
               #full hall horizontal paths
 clear_lines = [((2, 2), (2, 74)),
@@ -42,36 +42,36 @@ clear_lines = [((2, 2), (2, 74)),
               ((15, 69), (15, 74)),
               ((16, 69), (16, 74))]
 
-excluded_tiles = [me10101.panel_to_index(2, 75), me10101.panel_to_index(16, 75), me10101.panel_to_index(29, 75)]
-racetrack =  me10101.all_paths(clear_lines, excluded_tiles)
+excluded_tiles = [single_hall_01.panel_to_index(2, 75), single_hall_01.panel_to_index(16, 75), single_hall_01.panel_to_index(29, 75)]
+racetrack =  single_hall_01.all_paths(clear_lines, excluded_tiles)
 no_path = []
 for grid_y in range(0, height):
     for grid_x in range(0, width):
         no_path.append((grid_y, grid_x))
 #print no_path
 
-floorplan = me10101.difference_of_lists(no_path, racetrack)
-me10101.set_floorplan(floorplan)
+floorplan = single_hall_01.difference_of_lists(no_path, racetrack)
+single_hall_01.set_floorplan(floorplan)
 
 #define coord dictionaries
-me10101._z_side_list = ("212-A", "212-B", "216-A", "216-B")
-me10101._z_side_coord_list = {'212-A': (1, 1), '212-B': (1, 1), '216-A': (1, 1), '216-B': (1, 1)}
-me10101._z_side_hall_list = {'212-A': 0, '212-B': 0, '216-A': 0, '216-B': 0}
+single_hall_01._z_side_list = ("212-A", "212-B", "216-A", "216-B")
+single_hall_01._z_side_coord_list = {'212-A': (1, 1), '212-B': (1, 1), '216-A': (1, 1), '216-B': (1, 1)}
+single_hall_01._z_side_hall_list = {'212-A': 0, '212-B': 0, '216-A': 0, '216-B': 0}
 hall_1_cabinet_list = {'212-A': (13, 70), '212-B': (12, 70), '216-B': (5, 70), '216-A': (4, 70)}
 
 #this forbidden list only blocks the entrance areas
-me10101._forbidden_list = {'212-A': ((1, 66), (1, 67), (28, 66), (28, 67)),
+single_hall_01._forbidden_list = {'212-A': ((1, 66), (1, 67), (28, 66), (28, 67)),
                                 '212-B': ((1, 66), (1, 67), (28, 66), (28, 67)),
                                 '216-A': ((15, 66), (15, 67)),
                                 '216-B': ((15, 66), (15, 67))}
 
 #create and add the midpoint to the forbidden list of cabinets that don't use
 #the midpoint as an access path: traces should run around the outside of the track
-midpoint = tuple(me10101.line((16, 2), (16, 68)))
-two_one_six_a = me10101._forbidden_list['216-A']
-two_one_six_b = me10101._forbidden_list['216-B']
-me10101._forbidden_list['216-A'] = midpoint + two_one_six_a
-me10101._forbidden_list['216-B'] = midpoint + two_one_six_b
+midpoint = tuple(single_hall_01.line((16, 2), (16, 68)))
+two_one_six_a = single_hall_01._forbidden_list['216-A']
+two_one_six_b = single_hall_01._forbidden_list['216-B']
+single_hall_01._forbidden_list['216-A'] = midpoint + two_one_six_a
+single_hall_01._forbidden_list['216-B'] = midpoint + two_one_six_b
 
 #using coordinate for cabinet 801
 offset = (27, 46)
@@ -244,16 +244,16 @@ hall_1_cabinet_list.update(row_700)
 hall_1_cabinet_list.update(row_800)
 
 #create the reverse-lookup cabinet list
-hall1_reverse_cabinet_list = me10101.invert_dictionary(hall_1_cabinet_list)
+hall1_reverse_cabinet_list = single_hall_01.invert_dictionary(hall_1_cabinet_list)
 
 #add the hall dictionaries to the 'all' lists
-me10101._all_hall_cabinet_list.append(hall_1_cabinet_list)
-me10101._all_hall_reverse_cabinet_list.append(hall1_reverse_cabinet_list)
+single_hall_01._all_hall_cabinet_list.append(hall_1_cabinet_list)
+single_hall_01._all_hall_reverse_cabinet_list.append(hall1_reverse_cabinet_list)
 
 #Starting points for a + z sides
 starting_a = [27, 54]
-starting_z = me10101._all_hall_cabinet_list[0][me10101._z_side_list[-1]]
-me10101.set_aside(starting_a[0], starting_a[1])
-me10101.set_zside(starting_z[0], starting_z[1])
+starting_z = single_hall_01._all_hall_cabinet_list[0][single_hall_01._z_side_list[-1]]
+single_hall_01.set_aside(starting_a[0], starting_a[1])
+single_hall_01.set_zside(starting_z[0], starting_z[1])
 
-poc_zombie_gui.run_gui(me10101)
+poc_zombie_gui.run_gui(single_hall_01)

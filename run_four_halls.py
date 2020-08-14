@@ -18,7 +18,7 @@ width = 151
 border = 1
 tile_size = 5
 
-me1 = FullpathCalculator.path_calculator(height, width)
+four_halls_site_01 = FullpathCalculator.path_calculator(height, width)
 hall_1_offset = (31, 0)
 hall_2_offset = (0, 0)
 hall_3_offset = (0, 76)
@@ -64,9 +64,9 @@ clear_lines = clear_lines + [((offset[0]+2, offset[1]+2), (offset[0]+2, offset[1
               ((offset[0]+15, offset[1]+69), (offset[0]+15, offset[1]+74)),
               ((offset[0]+16, offset[1]+69), (offset[0]+16, offset[1]+74))]
 
-excluded_tiles = excluded_tiles + [me1.panel_to_index(offset[0]+2, offset[1]+75), 
-                  me1.panel_to_index(offset[0]+16, offset[1]+75), 
-                  me1.panel_to_index(offset[0]+29, offset[1]+75)]
+excluded_tiles = excluded_tiles + [four_halls_site_01.panel_to_index(offset[0] + 2, offset[1] + 75),
+                                   four_halls_site_01.panel_to_index(offset[0] + 16, offset[1] + 75),
+                                   four_halls_site_01.panel_to_index(offset[0] + 29, offset[1] + 75)]
                   
 #setup hall 2
 offset = hall_2_offset                 
@@ -148,37 +148,37 @@ clear_lines = clear_lines + [((offset[0]+2, offset[1]+2), (offset[0]+2, offset[1
 
 offset = hall_1_offset                  
 #define coord dictionaries
-me1._z_side_list = ("212-A", "212-B", "216-A", "216-B")
-#me1._z_side_coord_list = {'212-A': (1, 1), '212-B': (1, 1), '216-A': (1, 1), '216-B': (1, 1)}
-me1._z_side_hall_list = {'212-A': 0, '212-B': 0, '216-A': 0, '216-B': 0}
+four_halls_site_01._z_side_list = ("212-A", "212-B", "216-A", "216-B")
+#four_halls_site_01._z_side_coord_list = {'212-A': (1, 1), '212-B': (1, 1), '216-A': (1, 1), '216-B': (1, 1)}
+four_halls_site_01._z_side_hall_list = {'212-A': 0, '212-B': 0, '216-A': 0, '216-B': 0}
 hall_1_cabinet_list = {'212-A': (offset[0]+13, offset[1]+70),
                        '212-B': (offset[0]+12, offset[1]+70), 
                        '216-B': (offset[0]+5, offset[1]+70), 
                        '216-A': (offset[0]+4, offset[1]+70)}
 
 #this forbidden list only blocks the entrance areas
-me1._forbidden_list = {'212-A': ((offset[0]+1, offset[1]+66), (offset[0]+1, offset[1]+67), (offset[0]+28, offset[1]+66), (offset[0]+28, offset[1]+67)),
+four_halls_site_01._forbidden_list = {'212-A': ((offset[0] + 1, offset[1] + 66), (offset[0] + 1, offset[1] + 67), (offset[0] + 28, offset[1] + 66), (offset[0] + 28, offset[1] + 67)),
                                 '212-B': ((offset[0]+1, offset[1]+66), (offset[0]+1, offset[1]+67), (offset[0]+28, offset[1]+66), (offset[0]+28, offset[1]+67)),
                                 '216-A': ((offset[0]+15, offset[1]+66), (offset[0]+15, offset[1]+67)),
                                 '216-B': ((offset[0]+15, offset[1]+66), (offset[0]+15, offset[1]+67))}
                   
-racetrack =  me1.all_paths(clear_lines, excluded_tiles)
+racetrack =  four_halls_site_01.all_paths(clear_lines, excluded_tiles)
 no_path = []
 for grid_y in range(0, height):
     for grid_x in range(0, width):
         no_path.append((grid_y, grid_x))
 #print no_path
 
-floorplan = me1.difference_of_lists(no_path, racetrack)
-me1.set_floorplan(floorplan)
+floorplan = four_halls_site_01.difference_of_lists(no_path, racetrack)
+four_halls_site_01.set_floorplan(floorplan)
 
 #create and add the midpoint to the forbidden list of cabinets that don't use
 #the midpoint as an access path: traces should run around the outside of the track
-midpoint = tuple(me1.line((offset[0]+16, offset[1]+2), (offset[0]+16, offset[1]+68)))
-two_one_six_a = me1._forbidden_list['216-A']
-two_one_six_b = me1._forbidden_list['216-B']
-me1._forbidden_list['216-A'] = midpoint + two_one_six_a
-me1._forbidden_list['216-B'] = midpoint + two_one_six_b
+midpoint = tuple(four_halls_site_01.line((offset[0] + 16, offset[1] + 2), (offset[0] + 16, offset[1] + 68)))
+two_one_six_a = four_halls_site_01._forbidden_list['216-A']
+two_one_six_b = four_halls_site_01._forbidden_list['216-B']
+four_halls_site_01._forbidden_list['216-A'] = midpoint + two_one_six_a
+four_halls_site_01._forbidden_list['216-B'] = midpoint + two_one_six_b
 
 #using coordinate for cabinet 801
 offset = (27, 46)
@@ -351,16 +351,16 @@ hall_1_cabinet_list.update(row_700)
 hall_1_cabinet_list.update(row_800)
 
 #create the reverse-lookup cabinet list
-hall1_reverse_cabinet_list = me1.invert_dictionary(hall_1_cabinet_list)
+hall1_reverse_cabinet_list = four_halls_site_01.invert_dictionary(hall_1_cabinet_list)
 
 #add the hall dictionaries to the 'all' lists
-me1._all_hall_cabinet_list.append(hall_1_cabinet_list)
-me1._all_hall_reverse_cabinet_list.append(hall1_reverse_cabinet_list)
+four_halls_site_01._all_hall_cabinet_list.append(hall_1_cabinet_list)
+four_halls_site_01._all_hall_reverse_cabinet_list.append(hall1_reverse_cabinet_list)
 
 #Starting points for a + z sides
 starting_a = [27, 54]
-starting_z = me1._all_hall_cabinet_list[0][me1._z_side_list[-1]]
-me1.set_aside(starting_a[0], starting_a[1])
-me1.set_zside(starting_z[0], starting_z[1])
+starting_z = four_halls_site_01._all_hall_cabinet_list[0][four_halls_site_01._z_side_list[-1]]
+four_halls_site_01.set_aside(starting_a[0], starting_a[1])
+four_halls_site_01.set_zside(starting_z[0], starting_z[1])
 
-poc_zombie_gui.run_gui(me1, tile_size=5, adjustment_speed = 1)
+poc_zombie_gui.run_gui(four_halls_site_01, tile_size=5, adjustment_speed = 1)

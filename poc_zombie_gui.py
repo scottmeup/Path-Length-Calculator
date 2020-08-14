@@ -27,6 +27,7 @@ EIGHT_WAY = 1
 OBSTACLE = 5
 HUMAN = 6
 ZOMBIE = 7
+INSPECT = ''
 METERS_PER_TILE = 0.6
 FEET_PER_METER = 3.28084
 
@@ -55,7 +56,8 @@ CELL_COLORS = {EMPTY: "Yellow",
 NAME_MAP = {OBSTACLE: "Delete Path",
             HUMAN: "Place Z-Side",
             ZOMBIE: "Place A-Side",
-            EMPTY: "Add Path"}
+            EMPTY: "Add Path",
+            INSPECT: "Inspect Cell"}
 
 # GUI constants
 CELL_SIZE = 10
@@ -123,6 +125,7 @@ class ApocalypseGUI:
         self._text_a_cabinet = self._frame.add_input('A-Cabinet', self.input_aside_cabinet, 200)
         self._text_z_hall = self._frame.add_input('Z-Hall', self.input_zside_hall, 200)
         self._text_z_cabinet = self._frame.add_input('Z-Cabinet', self.input_zside_cabinet, 200)
+        self._text_cell_weight = self._frame.add_input('Weight', self.input_cell_weight, 200)
         self._frame.add_button("Input A+Z Sides", self.process_input_a_z_sides, 200)
         self._frame.set_mouseclick_handler(self.add_item)
         self._frame.set_draw_handler(self.draw)
@@ -209,6 +212,13 @@ class ApocalypseGUI:
         Takes text from frame input box and returns the value
         """
         return self._text_z_cabinet.get_text()
+
+    def input_cell_weight(self):
+        """
+        Returns the value from the weighting input box
+        :return:
+        """
+        return self._text_cell_weight.get_text()
 
     def process_input_a_z_sides(self):
         """
@@ -322,6 +332,27 @@ class ApocalypseGUI:
         
         #generate new distance information
         #self._simulation.compute_distance_field(HUMAN)
+
+    def inspect_cell(self, coordinate):
+        """
+        :param coordinate:
+        :return:
+        Handler for GUI, inspects the grid cell clicked on
+        """
+        cell_contents = self.get_cell_details(coordinate)
+
+    def get_cell_details(self, coordinate):
+        """
+        :param coordinate:
+        :return:
+        Passes call on to the program layer to retrieve the cell details for the given coordinate
+        """
+
+    def set_inspection_details(self):
+        """
+        :return:
+        Set the GUI layer fields with the relevant details from a cell inspection
+        """
         
     def calculate_length_handler(self):
         """
@@ -637,6 +668,9 @@ class ApocalypseGUI:
             self._item_type = EMPTY
             self._item_label.set_text(LABEL_STRING + NAME_MAP[EMPTY])
         elif self._item_type == EMPTY:
+            self._item_type = INSPECT
+            self._item_label.set_text(LABEL_STRING + NAME_MAP[INSPECT])
+        elif self._item_type == INSPECT:
             self._item_type = ZOMBIE
             self._item_label.set_text(LABEL_STRING + NAME_MAP[ZOMBIE])
 
@@ -696,7 +730,7 @@ class ApocalypseGUI:
 
     def add_item(self, click_position):
         """
-        Event handler to add / move / remove items
+        Event handler to add / move / remove items / inspect
         """
 
         #reset demo mode timer
@@ -740,6 +774,8 @@ class ApocalypseGUI:
                 self._simulation.set_empty(row, col)
             #set the coordinates weight to the simulation's default
             self._simulation.set_weight(row, col, self._simulation.get_default_weight())
+        elif self._item_type == INSPECT:
+            self.inspect_cell(clicked_coordinate)
         
 
     def is_occupied(self, row, col):
@@ -813,7 +849,7 @@ class ApocalypseGUI:
                     elif status == (FULL | HAS_ZOMBIE):
                         raise ValueError, "a-side placed on an obstacle"
                     elif status == (FULL | HAS_HUMAN | HAS_ZOMBIE):
-                        raise ValueError, "A+Z sodes placed on an obstacle"
+                        raise ValueError, "A+Z sides placed on an obstacle"
                     else:
                         raise ValueError, "invalid grid status: " + str(status)
                         

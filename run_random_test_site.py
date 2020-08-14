@@ -23,7 +23,7 @@ for row in range(height):
         start = 0
         end = 0
         if not test_site.is_empty(row, col):
-            #35/1000 is about hte max you want with lengths of between 1/10 and 1/2 the largest grid dimension
+            #35/1000 is about the max you want with lengths of between 1/10 and 1/2 the largest grid dimension
             if random.randrange(1000) < 30:
                 length = random.randrange(max(width, height)/10, max(width, height)/2, 1)
 
